@@ -153,28 +153,58 @@ GCP 로그인 상태, 프로젝트 설정, 필수 API 활성화 여부(`discover
 
 ---
 
-### 3단계: 배포된 API 엔드투엔드 테스트
+### 3단계: 자체 단위 테스트 및 배포 후 라이브 검증
 
-배포된 Cloud Run 엔드포인트가 실제 Layout Parser 데이터스토어에서 텍스트와 이미지 링크를 정상 추출하는지 테스트 스크립트로 검증합니다.
+이 프로젝트는 **오프라인 단위 테스트**와 **배포 후 실서버 라이브 검증**의 2단계 테스트 도구를 제공합니다.
+
+#### 1) 오프라인 단위 테스트 (Unit Tests)
+GCP 연결 없이도 모의(Mock) 응답 데이터를 통해 `extractive_segments` 본문 병합, `gs://` ➔ `https://` 이미지 링크 변환, `snippets` 및 `annotationContent` 폴백 로직을 즉시 검증합니다.
 ```bash
-# 기본 검색어("필터")로 테스트
+python3 -m unittest discover tests -v
+```
+
+#### 2) 배포된 Cloud Run 종합 검증 (Live Verification)
+배포된 Cloud Run 엔드포인트의 헬스체크와 실제 텍스트/이미지 추출 상태를 컬러 체크리스트로 확인합니다.
+```bash
+# 기본 검색어("필터")로 종합 테스트 실행
 ./scripts/test_search.sh
 
 # 원하는 특정 검색어로 테스트
 ./scripts/test_search.sh "전원 안 켜짐"
 ```
 
-#### 성공 응답 예시:
-```json
-{
-  "snippets": [
-    {
-      "title": "청정기_사용설명서.pdf",
-      "uri": "https://storage.cloud.google.com/my-bucket/manuals/filter_replace.png",
-      "text": "필터 교체 주기 및 세척 방법: 프리필터는 2주마다 물세척을 권장하며, 복합헤파필터는 12개월마다 새 필터로 교체하십시오..."
-    }
-  ]
-}
+#### 검증 체크리스트 및 성공 리포트 예시:
+```plaintext
+======================================================
+🧪 [1단계] 오프라인 단위 테스트(Unit Tests) 실행
+======================================================
+test_layout_parser_extractive_segments_and_image_uri ... ok
+test_snippets_fallback ... ok
+test_annotation_content_fallback ... ok
+test_empty_and_corrupt_data_handling ... ok
+✅ 오프라인 단위 테스트 완료!
+
+======================================================
+🧪 [2단계] 배포된 Cloud Run 라이브 엔드포인트 종합 검증
+======================================================
+📍 서비스 URL: https://layout-parser-search-api-xxxxxxxx.us-central1.run.app
+📍 검색 쿼리:  '필터'
+
+[1] 서비스 헬스체크 (/health)
+  [PASS] Cloud Run 인스턴스 정상 가동 확인 (/health 200 OK)
+
+[2] 검색 및 텍스트/이미지 링크 추출 검증 (/search)
+  [PASS] 검색 엔드포인트 HTTP 200 응답 수신
+  [PASS] 검색 결과(snippets) 배열 반환 확인 (총 3개 발견)
+  [PASS] 본문 텍스트 세그먼트 추출 완료 여부
+  [PASS] 이미지 및 문서 링크(HTTPS URL) 변환 여부
+
+--- 📋 추출된 세그먼트 상세 목록 ---
+[1] 제목: 공기청정기_사용설명서.pdf
+    이미지/문서 링크: https://storage.cloud.google.com/my-bucket/manuals/filter_replace.png
+    추출 텍스트: 필터 교체 주기 및 세척 방법: 프리필터는 2주마다 물세척을 권장하며...
+------------------------------------
+🎉 모든 단위 및 라이브 검증 테스트를 통과했습니다!
 ```
 
 ---
