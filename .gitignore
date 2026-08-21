@@ -1,19 +1,23 @@
-
-*$py.class
-CHANGELOG.md
-.DS_Store
-.env
-env/
-ENV/
-# Environment Variables
-.env.local
-.idea/
-*.log
-# Logs
-# OS / Editor
+# Python
 __pycache__/
 *.py[cod]
-# Python
+*$py.class
 .venv/
 venv/
+ENV/
+env/
+
+# Environment Variables & Secrets
+.env
+.env.local
+
+# OS / Editor
+.DS_Store
 .vscode/
+.idea/
+
+# Logs
+*.log
+
+# Local Revision Documentation
+CHANGELOG.md
