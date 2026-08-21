@@ -211,15 +211,21 @@ test_empty_and_corrupt_data_handling ... ok
 
 ### 4단계: CXAS OpenAPI 툴 등록
 
+`./scripts/deploy.sh` 스크립트 실행 시 **[`openapi.yaml`](openapi.yaml) 파일의 `servers[0].url`이 고객사 Cloud Run 배포 URL로 이미 자동 변경**되어 있습니다. 고객은 이 파일의 내용을 그대로 복사하여 CXAS 콘솔에 등록하기만 하면 됩니다.
+
 1. **CXAS 콘솔**로 이동합니다:
    - `https://ces.cloud.google.com/projects/[PROJECT_ID]/locations/[LOCATION]/apps/[APP_ID]/tools`
-2. 좌측 또는 우측 메뉴의 **Tools** > **"+" (Create)** 버튼을 클릭합니다.
-3. 툴 유형을 **OpenAPI**로 선택합니다.
+2. 메뉴에서 **Tools** > **"+" (Create)** 버튼을 클릭합니다.
+3. 툴 유형(Type)을 **OpenAPI**로 선택합니다.
 4. 툴 설정 입력:
    - **Tool Name**: `custom_layout_search`
    - **Description**: `Search layout parser unstructured datastore and retrieve manual text and diagrams`
-   - **Schema (YAML)**: 프로젝트의 [`openapi.yaml`](openapi.yaml) 파일 내용 전체를 복사하여 붙여넣습니다.
-5. **Save**를 눌러 등록합니다.
+   - **Schema (YAML)**: 프로젝트의 [`openapi.yaml`](openapi.yaml) 파일 내용 전체를 그대로 복사하여 붙여넣습니다.
+     *(팁: `cat openapi.yaml` 실행 후 출력된 내용을 복사하거나 파일을 직접 업로드)*
+5. **Authentication (인증)** 설정:
+   - Cloud Run이 비공개(`--no-allow-unauthenticated`)로 배포되었으므로, GECX 서비스 에이전트 호출 권한(2단계에서 자동 부여됨)을 이용합니다.
+   - 필요 시 인증 유형을 **Google Service Account ID Token**으로 지정합니다.
+6. **Save**를 눌러 도구를 저장합니다.
 
 ---
 
