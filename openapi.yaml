@@ -1,8 +1,8 @@
 openapi: 3.0.0
 info:
   title: Layout Parser Custom Search API
-  description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API (본문 텍스트, 이미지 V4 Signed URL, 문서 출처 및 페이지 제공)
-  version: 1.2.0
+  description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API (본문 텍스트, 이미지 및 PDF 원본 V4 Signed URL, 출처 및 페이지 제공)
+  version: 1.3.0
 servers:
   - url: https://layout-parser-search-api-2v27qnoy2q-uc.a.run.app
     description: Deployed Cloud Run Search Proxy Service
@@ -10,7 +10,7 @@ paths:
   /search:
     post:
       summary: Search the user manual PDF chunks
-      description: Search layout parser chunks and return extracted text, signed image links, and source citations
+      description: Search layout parser chunks and return extracted text, signed image links, signed PDF document links, and source citations
       operationId: searchManual
       requestBody:
         required: true
@@ -48,7 +48,10 @@ paths:
                           description: 매뉴얼 원본 페이지 번호 (예: 36)
                         uri:
                           type: string
-                          description: V4 Signed URL 또는 HTTPS 이미지/문서 주소
+                          description: 다이어그램 이미지 V4 Signed URL 주소
+                        pdf_uri:
+                          type: string
+                          description: 원본 매뉴얼 PDF 문서 V4 Signed URL 주소 (열람/다운로드 가능)
                         text:
                           type: string
                           description: 매뉴얼 본문 텍스트 내용

@@ -38,6 +38,7 @@ class TestLayoutParserTransformation(unittest.TestCase):
         self.assertEqual(snippet["source"], "CHPI-5820L-Manual")
         self.assertEqual(snippet["page"], "36")
         self.assertEqual(snippet["title"], "CHPI-5820L-Manual (p.36)")
+        self.assertIn("pdf_uri", snippet)
         # 본문 및 링크 검증
         self.assertIn("사용 후 교체 필터 처리 방법", snippet["text"])
         self.assertTrue(snippet["uri"].startswith("http"))
