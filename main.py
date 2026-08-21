@@ -1,5 +1,7 @@
 import os
 import sys
+import datetime
+import urllib.parse
 
 # 로컬 개발 환경에서 .env 파일 로드 지원
 try:
@@ -16,8 +18,11 @@ except ImportError:
 try:
     import google.auth
     from google.auth.transport.requests import Request
+    import google.auth.iam
+    from google.cloud import storage
 except ImportError:
     google = None
+    storage = None
 
 try:
     from flask import Flask, request, jsonify
@@ -32,7 +37,9 @@ DATASTORE_ID = os.environ.get("DATASTORE_ID")
 LOCATION = os.environ.get("LOCATION", "global")
 COLLECTION_ID = os.environ.get("COLLECTION_ID", "default_collection")
 SERVING_CONFIG_ID = os.environ.get("SERVING_CONFIG_ID", "default_search")
-GCS_URL_PREFIX = os.environ.get("GCS_URL_PREFIX", "https://storage.cloud.google.com/")
+ENABLE_SIGNED_URL = os.environ.get("ENABLE_SIGNED_URL", "true").lower() in ("true", "1", "yes")
+SIGNED_URL_EXPIRATION_MINUTES = int(os.environ.get("SIGNED_URL_EXPIRATION_MINUTES", "60"))
+GCS_FALLBACK_URL_PREFIX = os.environ.get("GCS_FALLBACK_URL_PREFIX", "https://storage.cloud.google.com/")
 
 
 def get_project_id(creds, default_project):
@@ -44,11 +51,70 @@ def get_project_id(creds, default_project):
     raise ValueError("PROJECT_ID가 설정되지 않았습니다. .env 또는 환경변수를 확인해주세요.")
 
 
-def convert_gs_uri(uri: str) -> str:
-    """gs:// 경로를 HTTPS 주소(https://storage.cloud.google.com/...)로 변환"""
-    if uri and uri.startswith("gs://"):
-        return GCS_URL_PREFIX.rstrip("/") + "/" + uri[5:]
-    return uri or ""
+def get_service_account_email(creds) -> str:
+    """Cloud Run 인스턴스 또는 ADC에서 실행 중인 서비스 계정 이메일 확인"""
+    sa_email = getattr(creds, "service_account_email", None)
+    if sa_email and sa_email != "default":
+        return sa_email
+
+    # Cloud Run 메타데이터 서버를 통해 조회
+    if requests is not None:
+        try:
+            resp = requests.get(
+                "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email",
+                headers={"Metadata-Flavor": "Google"},
+                timeout=2
+            )
+            if resp.status_code == 200:
+                return resp.text.strip()
+        except Exception:
+            pass
+
+    return ""
+
+
+def convert_gs_uri_to_signed_or_https(gs_uri: str) -> str:
+    """
+    gs:// URI를 외부 사용자가 열람 가능한 V4 Signed URL 또는 HTTPS URL로 변환.
+    - ENABLE_SIGNED_URL=true: 60분 임시 V4 Signed URL 생성 (외부 대중 고객도 접근 가능)
+    - 실패 또는 비활성화 시: https://storage.cloud.google.com/... 로 폴백
+    """
+    if not gs_uri or not gs_uri.startswith("gs://"):
+        return gs_uri or ""
+
+    raw_path = gs_uri[5:]  # bucket/path/to/image.png
+    parts = raw_path.split("/", 1)
+    if len(parts) != 2:
+        return GCS_FALLBACK_URL_PREFIX.rstrip("/") + "/" + raw_path
+
+    bucket_name = parts[0]
+    # URL 디코딩 정규화: 특수문자/괄호 SignatureDoesNotMatch 방지
+    blob_name = urllib.parse.unquote(parts[1])
+
+    if ENABLE_SIGNED_URL and google is not None and storage is not None:
+        try:
+            creds, default_project = google.auth.default()
+            if not creds.valid:
+                creds.refresh(Request())
+
+            sa_email = get_service_account_email(creds)
+            client = storage.Client(credentials=creds, project=default_project)
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+
+            if sa_email:
+                signed_url = blob.generate_signed_url(
+                    version="v4",
+                    expiration=datetime.timedelta(minutes=SIGNED_URL_EXPIRATION_MINUTES),
+                    method="GET",
+                    service_account_email=sa_email,
+                    access_token=creds.token
+                )
+                return signed_url
+        except Exception as e:
+            print(f"[SIGNED_URL_WARN] Failed to sign {gs_uri}, falling back to HTTPS: {e}", file=sys.stderr)
+
+    return GCS_FALLBACK_URL_PREFIX.rstrip("/") + "/" + raw_path
 
 
 def transform_discovery_engine_response(search_results: dict) -> dict:
@@ -58,7 +124,7 @@ def transform_discovery_engine_response(search_results: dict) -> dict:
       1) extractive_segments[].content (Layout Parser 본문)
       2) snippets[].snippet (일반 텍스트 폴백)
       3) annotationContent[] (이미지 텍스트 인덱스 폴백)
-    - 링크 변환: gs:// 경로를 https://storage.cloud.google.com/... URL로 변환
+    - 링크 변환: V4 Signed URL 또는 HTTPS URL
     """
     snippets = []
     if not isinstance(search_results, dict):
@@ -80,15 +146,15 @@ def transform_discovery_engine_response(search_results: dict) -> dict:
             if raw_snippets:
                 text_content = " ".join([s.get("snippet", "").strip() for s in raw_snippets if s.get("snippet")])
 
-        # 3순위: annotationContent 폴백 (이미지 텍스트 인덱스 대응)
+        # 3순위: annotationContent 폴백
         if not text_content:
             annotation_content = struct_data.get("annotationContent", [])
             if annotation_content:
                 text_content = " ".join([str(item).strip() for item in annotation_content if item])
 
-        # GCS 경로 -> HTTPS 변환 (https://storage.cloud.google.com/...)
+        # 이미지/문서 링크 변환
         raw_uri = struct_data.get("link", "")
-        uri = convert_gs_uri(raw_uri)
+        uri = convert_gs_uri_to_signed_or_https(raw_uri)
 
         title = struct_data.get("title", doc.get("id", ""))
 
@@ -117,7 +183,6 @@ def search_layout_parser(query: str, project_id: str, datastore_id: str, locatio
     if google is None or requests is None:
         raise ImportError("google-auth 및 requests 패키지가 필요합니다.")
 
-    # Google ADC 인증 정보 로드
     creds, default_project = google.auth.default()
     if not creds.valid:
         creds.refresh(Request())
@@ -176,7 +241,9 @@ if app:
             "status": "healthy",
             "project_id": PROJECT_ID or "(auto-detected)",
             "datastore_id": DATASTORE_ID or "(not-set)",
-            "location": LOCATION
+            "location": LOCATION,
+            "signed_url_enabled": ENABLE_SIGNED_URL,
+            "signed_url_expiration_minutes": SIGNED_URL_EXPIRATION_MINUTES
         }), 200
 
 
