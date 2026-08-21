@@ -127,7 +127,10 @@ def verify_cloud_run(service_url: str, query: str):
                 print(f"    {BOLD}출처 문서:{RESET} {CYAN}{s.get('source')}{RESET} (페이지: {s.get('page', 'N/A')})")
             uri = s.get('uri')
             if uri:
-                print(f"    {BOLD}이미지/문서 링크:{RESET} {GREEN}{uri}{RESET}")
+                print(f"    {BOLD}이미지 다이어그램:{RESET} {GREEN}{uri}{RESET}")
+            pdf_uri = s.get('pdf_uri')
+            if pdf_uri:
+                print(f"    {BOLD}PDF 원본 매뉴얼:{RESET} {CYAN}{pdf_uri}{RESET}")
             preview = s.get('text', '').replace('\n', ' ')[:100]
             print(f"    {BOLD}추출 텍스트:{RESET} {preview}...")
         print(f"{BLUE}------------------------------------{RESET}")

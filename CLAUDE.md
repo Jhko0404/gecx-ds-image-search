@@ -6,7 +6,7 @@
 
 ## 🛠️ 프로젝트 핵심 구성 및 파일 역할
 
-- `main.py`: Discovery Engine Search REST API와 통신하여 `extractive_segments` 및 이미지 GCS URL을 추출·변환하여 CXAS 규격(`snippets: [{title, uri, text}]`)으로 가공하는 백엔드 서버.
+- `main.py`: Discovery Engine Search REST API와 통신하여 `extractive_segments`, 다이어그램 이미지(`uri`), 원본 PDF 문서(`pdf_uri`), 출처(`source`), 페이지(`page`)를 추출·변환하여 CXAS 규격(`snippets: [{title, source, page, uri, pdf_uri, text}]`)으로 가공하는 백엔드 서버.
 - `tests/test_parser.py`: 모의(Mock) 데이터를 이용해 텍스트 세그먼트 병합, `gs://` ➔ `https://` 이미지 URL 변환, 폴백 로직을 검증하는 오프라인 단위 테스트 스위트.
 - `requirements.txt` / `Dockerfile`: Cloud Run 배포용 의존성 및 컨테이너 빌드 파일.
 - `openapi.yaml`: CXAS Tools에 등록하기 위한 OpenAPI 3.0 명세 파일 (배포 시 URL 자동 치환).
