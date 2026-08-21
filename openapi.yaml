@@ -1,0 +1,48 @@
+openapi: 3.0.0
+info:
+  title: Layout Parser Custom Search API
+  description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API
+  version: 1.0.0
+servers:
+  - url: https://[YOUR_CLOUD_RUN_SERVICE_URL]
+    description: Deployed Cloud Run Service URL
+paths:
+  /search:
+    post:
+      summary: Search the user manual PDF chunks
+      description: Search layout parser chunks and return extracted text and image links
+      operationId: searchManual
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                query:
+                  type: string
+                  description: The search keyword or phrase
+              required:
+                - query
+      responses:
+        '200':
+          description: Successfully retrieved layout segments and snippets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  snippets:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        title:
+                          type: string
+                          description: Document title or ID
+                        uri:
+                          type: string
+                          description: Direct HTTPS link to the source document or image
+                        text:
+                          type: string
+                          description: Extracted layout text and manual contents
