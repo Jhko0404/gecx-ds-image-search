@@ -1,30 +1,25 @@
 import unittest
 import json
-from main import transform_discovery_engine_response, convert_gs_uri_to_signed_or_https, app
+from main import transform_discovery_engine_response, convert_gs_uri_to_signed_or_https, parse_source_and_page, app
 
 
 class TestLayoutParserTransformation(unittest.TestCase):
     """Discovery Engine Layout Parser 응답 변환 로직 단위 테스트"""
 
-    def test_layout_parser_extractive_segments(self):
-        """1. Layout Parser 본문 세그먼트 추출 검증"""
+    def test_layout_parser_extractive_segments_and_citations(self):
+        """1. Layout Parser 본문 세그먼트, 이미지 URL, 출처(source) 및 페이지(page) 추출 검증"""
         mock_raw_response = {
             "results": [
                 {
-                    "id": "doc-001",
+                    "id": "1782537242706-e6cbd739-ef97-426e-8ed6-188b9ae2cef8_36",
                     "document": {
-                        "id": "doc-001",
+                        "id": "1782537242706-e6cbd739-ef97-426e-8ed6-188b9ae2cef8_36",
                         "derivedStructData": {
-                            "title": "공기청정기_사용설명서.pdf",
-                            "link": "gs://cx-manual-bucket/images/filter_cleaning_guide.png",
+                            "link": "gs://layout-parser-bk/coway-img1/CHPI-5820L-Manual(acrobat-png)/1782537242706-e6cbd739-ef97-426e-8ed6-188b9ae2cef8_36.png",
                             "extractive_segments": [
                                 {
-                                    "pageNumber": "12",
-                                    "content": "필터 청소 방법: 프리필터는 2주마다 진공청소기 또는 미온수로 세척하십시오."
-                                },
-                                {
-                                    "pageNumber": "12",
-                                    "content": "탈취필터 및 헤파필터는 물세척이 불가능하므로 주기적으로 교체해야 합니다."
+                                    "pageNumber": "36",
+                                    "content": "4. Disposal Method for Used Replacement Filters (사용 후 교체 필터 처리 방법)"
                                 }
                             ]
                         }
@@ -39,9 +34,12 @@ class TestLayoutParserTransformation(unittest.TestCase):
         self.assertEqual(len(result["snippets"]), 1)
 
         snippet = result["snippets"][0]
-        self.assertEqual(snippet["title"], "공기청정기_사용설명서.pdf")
-        self.assertIn("프리필터는 2주마다", snippet["text"])
-        self.assertIn("헤파필터는 물세척이 불가능하므로", snippet["text"])
+        # 출처 및 페이지 검증
+        self.assertEqual(snippet["source"], "CHPI-5820L-Manual")
+        self.assertEqual(snippet["page"], "36")
+        self.assertEqual(snippet["title"], "CHPI-5820L-Manual (p.36)")
+        # 본문 및 링크 검증
+        self.assertIn("사용 후 교체 필터 처리 방법", snippet["text"])
         self.assertTrue(snippet["uri"].startswith("http"))
 
     def test_snippets_fallback(self):
@@ -52,7 +50,7 @@ class TestLayoutParserTransformation(unittest.TestCase):
                     "document": {
                         "id": "text-doc-002",
                         "derivedStructData": {
-                            "title": "텍스트_문서.pdf",
+                            "title": "공기청정기_매뉴얼.pdf",
                             "link": "https://storage.googleapis.com/sample/doc.pdf",
                             "snippets": [
                                 {"snippet": "일반 텍스트 스니펫 내용입니다."}
@@ -66,7 +64,7 @@ class TestLayoutParserTransformation(unittest.TestCase):
         result = transform_discovery_engine_response(mock_raw_response)
         self.assertEqual(len(result["snippets"]), 1)
         self.assertEqual(result["snippets"][0]["text"], "일반 텍스트 스니펫 내용입니다.")
-        self.assertEqual(result["snippets"][0]["uri"], "https://storage.googleapis.com/sample/doc.pdf")
+        self.assertEqual(result["snippets"][0]["source"], "공기청정기_매뉴얼.pdf")
 
     def test_annotation_content_fallback(self):
         """3. snippets 부재 시 annotationContent(이미지 OCR 인덱스) 폴백 검증"""

@@ -2,6 +2,7 @@ import os
 import sys
 import datetime
 import urllib.parse
+import re
 
 # 로컬 개발 환경에서 .env 파일 로드 지원
 try:
@@ -116,6 +117,62 @@ def convert_gs_uri_to_signed_or_https(gs_uri: str) -> str:
     return GCS_FALLBACK_URL_PREFIX.rstrip("/") + "/" + raw_path
 
 
+def parse_source_and_page(struct_data: dict, doc_id: str):
+    """
+    Discovery Engine 메타데이터에서 직관적인 문서명(source)과 실제 페이지 번호(page)를 추출.
+    - source: 문서명 (예: CHPI-5820L-Manual)
+    - page: 페이지 번호 (예: 37)
+    - title: 화면 표시용 종합 타이틀 (예: CHPI-5820L-Manual (p.37))
+    """
+    raw_uri = struct_data.get("link", "")
+    title_field = struct_data.get("title", "")
+    segments = struct_data.get("extractive_segments", [])
+    annotation_content = struct_data.get("annotationContent", [])
+
+    # 1. 실제 매뉴얼 페이지 번호 추출 (1순위: 파일명/doc_id의 _접미사, 2순위: extractive_segments, 3순위: annotationContent)
+    page = ""
+    target_str = raw_uri or doc_id
+    m = re.search(r"_(\d+)(?:\.png|\.pdf)?(?:\?|$)", target_str)
+    if m:
+        page = m.group(1)
+
+    if not page and segments and isinstance(segments, list):
+        first_seg = segments[0]
+        if first_seg.get("pageNumber"):
+            page = str(first_seg.get("pageNumber")).strip()
+
+    if not page and annotation_content:
+        for ann in annotation_content:
+            m = re.search(r"(?:page number is|페이지(?:는)?\s*)(\d+)", str(ann), re.IGNORECASE)
+            if m:
+                page = m.group(1)
+                break
+
+    # 2. 문서명(출처) 추출
+    source = ""
+    if title_field and not re.match(r"^\d{10,}-[a-f0-9-]+", title_field):
+        source = title_field
+    elif raw_uri.startswith("gs://"):
+        path_parts = raw_uri[5:].split("/")
+        if len(path_parts) >= 3:
+            raw_folder = path_parts[-2]
+            cleaned = re.sub(r"\(.*?\)", "", raw_folder).strip()
+            source = cleaned or raw_folder
+        else:
+            source = path_parts[-1]
+
+    if not source:
+        source = "제품 매뉴얼"
+
+    # 3. 에이전트 가독성을 위한 직관적인 title 구성
+    if page:
+        display_title = f"{source} (p.{page})"
+    else:
+        display_title = source
+
+    return source, page, display_title
+
+
 def transform_discovery_engine_response(search_results: dict) -> dict:
     """
     Discovery Engine 검색 응답을 파싱하여 CXAS 규격({ "snippets": [...] })으로 변환.
@@ -123,6 +180,10 @@ def transform_discovery_engine_response(search_results: dict) -> dict:
       1) extractive_segments[].content (Layout Parser 본문)
       2) snippets[].snippet (일반 텍스트 폴백)
       3) annotationContent[] (이미지 텍스트 인덱스 폴백)
+    - 출처 정보 추출:
+      - source: 문서명 (예: CHPI-5820L-Manual)
+      - page: 페이지 번호 (예: 37)
+      - title: 직관적인 출처 타이틀 (예: CHPI-5820L-Manual (p.37))
     - 링크 변환: V4 Signed URL 또는 HTTPS URL
     """
     snippets = []
@@ -132,6 +193,7 @@ def transform_discovery_engine_response(search_results: dict) -> dict:
     for result in search_results.get("results", []):
         doc = result.get("document", {})
         struct_data = doc.get("derivedStructData", {})
+        doc_id = doc.get("id", "")
 
         # 1순위: extractive_segments의 본문 내용 병합
         text_content = ""
@@ -155,14 +217,18 @@ def transform_discovery_engine_response(search_results: dict) -> dict:
         raw_uri = struct_data.get("link", "")
         uri = convert_gs_uri_to_signed_or_https(raw_uri)
 
-        title = struct_data.get("title", doc.get("id", ""))
+        # 출처(문서명, 페이지, 직관적 타이틀) 파싱
+        source, page, title = parse_source_and_page(struct_data, doc_id)
 
         if text_content:
-            snippets.append({
+            snippet_item = {
                 "title": title,
+                "source": source,
+                "page": page,
                 "uri": uri,
                 "text": text_content
-            })
+            }
+            snippets.append(snippet_item)
 
     return {
         "snippets": snippets
@@ -178,7 +244,7 @@ def get_discovery_engine_host(location: str) -> str:
 
 
 def search_layout_parser(query: str, project_id: str, datastore_id: str, location: str = None) -> dict:
-    """Discovery Engine Search API를 호출하여 Layout Parser 텍스트/이미지 추출 및 매핑"""
+    """Discovery Engine Search API를 호출하여 Layout Parser 텍스트/이미지/출처 추출 및 매핑"""
     if google is None or requests is None:
         raise ImportError("google-auth 및 requests 패키지가 필요합니다.")
 

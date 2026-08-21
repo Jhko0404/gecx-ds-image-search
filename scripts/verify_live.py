@@ -16,6 +16,7 @@ GREEN = "\033[0;32m"
 RED = "\033[0;31m"
 YELLOW = "\033[1;33m"
 BLUE = "\033[0;34m"
+CYAN = "\033[0;36m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
@@ -122,6 +123,8 @@ def verify_cloud_run(service_url: str, query: str):
         print(f"\n{BLUE}--- 📋 추출된 세그먼트 상세 목록 ---{RESET}")
         for i, s in enumerate(snippets, 1):
             print(f"[{i}] {BOLD}제목:{RESET} {s.get('title', '(제목 없음)')}")
+            if s.get('source'):
+                print(f"    {BOLD}출처 문서:{RESET} {CYAN}{s.get('source')}{RESET} (페이지: {s.get('page', 'N/A')})")
             uri = s.get('uri')
             if uri:
                 print(f"    {BOLD}이미지/문서 링크:{RESET} {GREEN}{uri}{RESET}")

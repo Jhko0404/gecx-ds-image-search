@@ -1,16 +1,16 @@
 openapi: 3.0.0
 info:
   title: Layout Parser Custom Search API
-  description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API
-  version: 1.0.0
+  description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API (본문 텍스트, 이미지 V4 Signed URL, 문서 출처 및 페이지 제공)
+  version: 1.2.0
 servers:
   - url: https://layout-parser-search-api-2v27qnoy2q-uc.a.run.app
-    description: Deployed Cloud Run Service URL
+    description: Deployed Cloud Run Search Proxy Service
 paths:
   /search:
     post:
       summary: Search the user manual PDF chunks
-      description: Search layout parser chunks and return extracted text and image links
+      description: Search layout parser chunks and return extracted text, signed image links, and source citations
       operationId: searchManual
       requestBody:
         required: true
@@ -26,7 +26,7 @@ paths:
                 - query
       responses:
         '200':
-          description: Successfully retrieved layout segments and snippets
+          description: Successfully retrieved layout segments, snippets, and citations
           content:
             application/json:
               schema:
@@ -39,10 +39,16 @@ paths:
                       properties:
                         title:
                           type: string
-                          description: Document title or ID
+                          description: 직관적인 문서명 및 페이지 표시 (예: CHPI-5820L-Manual (p.36))
+                        source:
+                          type: string
+                          description: 출처 문서/매뉴얼 이름 (예: CHPI-5820L-Manual)
+                        page:
+                          type: string
+                          description: 매뉴얼 원본 페이지 번호 (예: 36)
                         uri:
                           type: string
-                          description: Direct HTTPS link to the source document or image
+                          description: V4 Signed URL 또는 HTTPS 이미지/문서 주소
                         text:
                           type: string
-                          description: Extracted layout text and manual contents
+                          description: 매뉴얼 본문 텍스트 내용
