@@ -26,7 +26,9 @@ Claude Code는 사용자가 환경 변수 확인을 어려워할 때 아래 기�
 | **`PROJECT_ID`** | **필수** | - | **콘솔**: 상단 프로젝트 드롭다운 클릭 ➔ 'ID' 열 값 복사<br>**CLI**: `gcloud config get-value project` |
 | **`DATASTORE_ID`** | **필수** | - | **콘솔**: `Vertex AI Search` ➔ 좌측 `Data Stores` 메뉴 ➔ 대상 데이터스토어 클릭 ➔ 상단 `Data store ID` 복사<br>**CLI**: `gcloud discovery-engine data-stores list` (또는 API 조회) |
 | **`REGION`** | 선택 | `us-central1` | Cloud Run 배포 리전 (국내 권장: `asia-northeast3`, 기본: `us-central1`) |
-| **`LOCATION`** | 선택 | `global` | Discovery Engine 데이터스토어 생성 위치 (기본 `global`) |
+| **`LOCATION`** | 선택 | `global` | Discovery Engine 데이터스토어 생성 위치 (`global`, `us`, `eu` 등) |
+| **`ENABLE_SIGNED_URL`**| 선택 | `true` | 비공개 GCS 버킷 이미지를 외부 사용자가 채팅창에서 볼 수 있도록 **V4 Signed URL(서명된 임시 링크)** 발급 여부 (`true` 권장) |
+| **`SIGNED_URL_EXPIRATION_MINUTES`** | 선택 | `60` | 서명된 이미지 URL의 유효 시간 (분 단위, 기본 60분) |
 | **`COLLECTION_ID`** | 선택 | `default_collection` | Discovery Engine 컬렉션 ID (기본값 유지) |
 | **`SERVING_CONFIG_ID`** | 선택 | `default_search` | 서빙 설정 ID (기본값 유지) |
 | **`SERVICE_NAME`** | 선택 | `layout-parser-search-api` | 배포할 Cloud Run 서비스 식별명 |

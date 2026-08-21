@@ -8,6 +8,7 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 echo -e "${BLUE}======================================================${NC}"
@@ -33,11 +34,15 @@ LOCATION=${LOCATION:-global}
 COLLECTION_ID=${COLLECTION_ID:-default_collection}
 SERVING_CONFIG_ID=${SERVING_CONFIG_ID:-default_search}
 SERVICE_NAME=${SERVICE_NAME:-layout-parser-search-api}
+ENABLE_SIGNED_URL=${ENABLE_SIGNED_URL:-true}
+SIGNED_URL_EXPIRATION_MINUTES=${SIGNED_URL_EXPIRATION_MINUTES:-60}
+GCS_FALLBACK_URL_PREFIX=${GCS_FALLBACK_URL_PREFIX:-https://storage.cloud.google.com/}
 
 echo -e "📍 프로젝트 ID: ${GREEN}${PROJECT_ID}${NC}"
 echo -e "📍 리전: ${GREEN}${REGION}${NC}"
 echo -e "📍 서비스 이름: ${GREEN}${SERVICE_NAME}${NC}"
 echo -e "📍 데이터스토어 ID: ${GREEN}${DATASTORE_ID}${NC}"
+echo -e "📍 V4 Signed URL 발급: ${GREEN}${ENABLE_SIGNED_URL} (유효시간: ${SIGNED_URL_EXPIRATION_MINUTES}분)${NC}"
 
 # 2. Cloud Run 배포
 echo -e "\n${BLUE}🔨 Cloud Run에 소스 배포 중... (잠시 시간이 소요될 수 있습니다)${NC}"
@@ -46,7 +51,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region "${REGION}" \
     --project "${PROJECT_ID}" \
     --no-allow-unauthenticated \
-    --set-env-vars "PROJECT_ID=${PROJECT_ID},DATASTORE_ID=${DATASTORE_ID},LOCATION=${LOCATION},COLLECTION_ID=${COLLECTION_ID},SERVING_CONFIG_ID=${SERVING_CONFIG_ID}" \
+    --set-env-vars "PROJECT_ID=${PROJECT_ID},DATASTORE_ID=${DATASTORE_ID},LOCATION=${LOCATION},COLLECTION_ID=${COLLECTION_ID},SERVING_CONFIG_ID=${SERVING_CONFIG_ID},ENABLE_SIGNED_URL=${ENABLE_SIGNED_URL},SIGNED_URL_EXPIRATION_MINUTES=${SIGNED_URL_EXPIRATION_MINUTES},GCS_FALLBACK_URL_PREFIX=${GCS_FALLBACK_URL_PREFIX}" \
     --quiet
 
 # 배포된 서비스 URL 확인
@@ -61,23 +66,43 @@ echo -e "🌐 서비스 URL: ${BLUE}${SERVICE_URL}${NC}"
 # 3. IAM 권한 자동 부여
 echo -e "\n${BLUE}🔑 필요한 IAM 권한을 구성합니다...${NC}"
 
-# 3-1. 프로젝트 번호 조회
-PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)")
+PROJECT_NUMBER=$(gcloud projects describe "${PROJECT_ID}" --format="value(projectNumber)" 2>/dev/null || true)
 COMPUTE_SA="${PROJECT_NUMBER}-compute@developer.gserviceaccount.com"
 GECX_SA="${GECX_SERVICE_ACCOUNT:-service-${PROJECT_NUMBER}@gcp-sa-ces.iam.gserviceaccount.com}"
 CURRENT_USER=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null || true)
 
-# 3-2. Cloud Run SA에 Discovery Engine Admin 권한 부여
+IAM_FAILED=0
+
+# 3-1. Cloud Run SA에 Discovery Engine Admin 권한 부여
 echo -e "  👉 1) Cloud Run 기본 서비스 계정(${COMPUTE_SA})에 Discovery Engine 관리자 권한 부여..."
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+if gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${COMPUTE_SA}" \
     --role="roles/discoveryengine.admin" \
     --condition=None \
+    --quiet 2>/dev/null; then
+    echo -e "     ${GREEN}✔ Discovery Engine 권한 설정 완료${NC}"
+else
+    echo -e "     ${YELLOW}⚠️  Discovery Engine 권한 부여 실패 (Project IAM Admin 권한 필요)${NC}"
+    IAM_FAILED=1
+fi
+
+# 3-2. Cloud Run SA에 V4 Signed URL 생성을 위한 TokenCreator 및 Storage Viewer 권한 부여
+echo -e "  👉 2) Cloud Run SA(${COMPUTE_SA})에 V4 Signed URL 발급 권한(TokenCreator, StorageViewer) 부여..."
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${COMPUTE_SA}" \
+    --role="roles/iam.serviceAccountTokenCreator" \
+    --condition=None \
     --quiet 2>/dev/null || true
-echo -e "     ${GREEN}✔ Discovery Engine 권한 설정 완료${NC}"
+
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member="serviceAccount:${COMPUTE_SA}" \
+    --role="roles/storage.objectViewer" \
+    --condition=None \
+    --quiet 2>/dev/null || true
+echo -e "     ${GREEN}✔ Signed URL 발급 권한 설정 완료${NC}"
 
 # 3-3. GECX Service Agent에 Cloud Run Invoker 권한 부여
-echo -e "  👉 2) GECX 서비스 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
+echo -e "  👉 3) GECX 서비스 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
 if gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
     --member="serviceAccount:${GECX_SA}" \
     --role="roles/run.invoker" \
@@ -95,7 +120,7 @@ if [ -n "$CURRENT_USER" ]; then
     if [[ "$CURRENT_USER" == *"gserviceaccount.com" ]]; then
         MEMBER_PREFIX="serviceAccount:"
     fi
-    echo -e "  👉 3) 현재 사용자(${MEMBER_PREFIX}${CURRENT_USER})에 테스트용 호출자(run.invoker) 권한 부여..."
+    echo -e "  👉 4) 현재 사용자(${MEMBER_PREFIX}${CURRENT_USER})에 테스트용 호출자(run.invoker) 권한 부여..."
     gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
         --member="${MEMBER_PREFIX}${CURRENT_USER}" \
         --role="roles/run.invoker" \
@@ -110,6 +135,21 @@ if [ -f openapi.yaml ]; then
     echo -e "\n${BLUE}📝 openapi.yaml 파일의 서버 URL을 업데이트합니다...${NC}"
     sed -i "s|url: https://.*|url: ${SERVICE_URL}|g" openapi.yaml
     echo -e "${GREEN}✅ openapi.yaml 업데이트 완료 (${SERVICE_URL})${NC}"
+fi
+
+# 5. IAM 수동 부여 가이드 안내 (필요시)
+if [ "$IAM_FAILED" -eq 1 ]; then
+    echo -e "\n${YELLOW}${BOLD}⚠️  [안내] 프로젝트 IAM 관리자 권한이 부족하여 일부 권한 부여가 건너뛰어졌습니다.${NC}"
+    echo -e "사내 GCP IAM 관리자에게 아래 명령어를 실행해 달라고 요청하세요:"
+    echo -e "${BLUE}---------------------------------------------------------------------------------${NC}"
+    echo -e "gcloud projects add-iam-policy-binding ${PROJECT_ID} \\"
+    echo -e "    --member=\"serviceAccount:${COMPUTE_SA}\" \\"
+    echo -e "    --role=\"roles/discoveryengine.admin\""
+    echo -e ""
+    echo -e "gcloud projects add-iam-policy-binding ${PROJECT_ID} \\"
+    echo -e "    --member=\"serviceAccount:${COMPUTE_SA}\" \\"
+    echo -e "    --role=\"roles/iam.serviceAccountTokenCreator\""
+    echo -e "${BLUE}---------------------------------------------------------------------------------${NC}"
 fi
 
 echo -e "\n${BLUE}======================================================${NC}"

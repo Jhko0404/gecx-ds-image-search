@@ -4,12 +4,11 @@
 # ==============================================================================
 set -e
 
-# 색상 정의
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 echo -e "${BLUE}======================================================${NC}"
 echo -e "${BLUE}🔍 GCP 및 프로젝트 환경 사전 점검을 시작합니다...${NC}"
@@ -45,7 +44,6 @@ if [ ! -f .env ]; then
     fi
 fi
 
-# .env 로드 (주석 제외)
 export $(grep -v '^#' .env | xargs -d '\n' 2>/dev/null || true)
 
 # 4. GCP Project ID 확인 및 자동 설정
@@ -81,6 +79,8 @@ REQUIRED_APIS=(
     "cloudbuild.googleapis.com"
     "artifactregistry.googleapis.com"
     "iam.googleapis.com"
+    "iamcredentials.googleapis.com"
+    "storage.googleapis.com"
 )
 
 APIS_TO_ENABLE=()
@@ -95,8 +95,10 @@ done
 
 if [ ${#APIS_TO_ENABLE[@]} -gt 0 ]; then
     echo -e "\n${YELLOW}⚠️  비활성화된 필수 API들을 활성화합니다: ${APIS_TO_ENABLE[*]}${NC}"
-    gcloud services enable "${APIS_TO_ENABLE[@]}" --project="${PROJECT_ID}"
-    echo -e "${GREEN}✅ 모든 필수 API 활성화 완료!${NC}"
+    gcloud services enable "${APIS_TO_ENABLE[@]}" --project="${PROJECT_ID}" || {
+        echo -e "${YELLOW}⚠️  일부 API 자동 활성화 권한이 부족할 수 있습니다. GCP 관리자에게 API 활성화를 요청하세요.${NC}"
+    }
+    echo -e "${GREEN}✅ 필수 API 점검 완료!${NC}"
 else
     echo -e "${GREEN}✅ 모든 필수 API가 이미 활성화되어 있습니다.${NC}"
 fi

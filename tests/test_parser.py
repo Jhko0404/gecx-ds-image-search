@@ -1,13 +1,13 @@
 import unittest
 import json
-from main import transform_discovery_engine_response, app
+from main import transform_discovery_engine_response, convert_gs_uri_to_signed_or_https, app
 
 
 class TestLayoutParserTransformation(unittest.TestCase):
     """Discovery Engine Layout Parser 응답 변환 로직 단위 테스트"""
 
     def test_layout_parser_extractive_segments_and_image_uri(self):
-        """1. Layout Parser 본문 세그먼트 추출 및 gs:// -> https:// URL 변환 테스트"""
+        """1. Layout Parser 본문 세그먼트 추출 및 gs:// -> URL 변환 테스트"""
         mock_raw_response = {
             "results": [
                 {
@@ -41,11 +41,9 @@ class TestLayoutParserTransformation(unittest.TestCase):
         snippet = result["snippets"][0]
         # 제목 검증
         self.assertEqual(snippet["title"], "공기청정기_사용설명서.pdf")
-        # 이미지/문서 URL 변환 검증 (gs:// -> https://storage.cloud.google.com/)
-        self.assertEqual(
-            snippet["uri"],
-            "https://storage.cloud.google.com/cx-manual-bucket/images/filter_cleaning_guide.png"
-        )
+        # 이미지/문서 URL 변환 검증 (https:// 시작 확인)
+        self.assertTrue(snippet["uri"].startswith("https://"))
+        self.assertIn("cx-manual-bucket/images/filter_cleaning_guide.png", snippet["uri"])
         # 본문 텍스트 병합 추출 검증
         self.assertIn("프리필터는 2주마다", snippet["text"])
         self.assertIn("헤파필터는 물세척이 불가능하므로", snippet["text"])
@@ -98,28 +96,24 @@ class TestLayoutParserTransformation(unittest.TestCase):
         self.assertEqual(len(result["snippets"]), 1)
         self.assertIn("전원 스위치 ON/OFF", result["snippets"][0]["text"])
         self.assertIn("적색 LED", result["snippets"][0]["text"])
-        self.assertEqual(
-            result["snippets"][0]["uri"],
-            "https://storage.cloud.google.com/my-bucket/diagrams/wiring.png"
-        )
+        self.assertTrue(result["snippets"][0]["uri"].startswith("https://"))
+
+    def test_gs_uri_conversion_fallback(self):
+        """4. gs:// URI 안전한 HTTPS 폴백 변환 검증"""
+        url = convert_gs_uri_to_signed_or_https("gs://my-test-bucket/sub/image.jpg")
+        self.assertTrue(url.startswith("https://"))
+        self.assertIn("my-test-bucket/sub/image.jpg", url)
+
+        # 비 gs:// URL은 원본 유지
+        non_gs = "https://example.com/image.png"
+        self.assertEqual(convert_gs_uri_to_signed_or_https(non_gs), non_gs)
 
     def test_empty_and_corrupt_data_handling(self):
-        """4. 빈 응답 및 필드 누락 시 안전한 빈 리스트 반환 검증"""
-        # 케이스 A: 완전히 빈 딕셔너리
-        res_a = transform_discovery_engine_response({})
-        self.assertEqual(res_a, {"snippets": []})
-
-        # 케이스 B: results가 빈 리스트
-        res_b = transform_discovery_engine_response({"results": []})
-        self.assertEqual(res_b, {"snippets": []})
-
-        # 케이스 C: derivedStructData 누락
-        res_c = transform_discovery_engine_response({"results": [{"document": {"id": "corrupt"}}]})
-        self.assertEqual(res_c, {"snippets": []})
-
-        # 케이스 D: None 또는 비정상 타입 입력
-        res_d = transform_discovery_engine_response(None)
-        self.assertEqual(res_d, {"snippets": []})
+        """5. 빈 응답 및 필드 누락 시 안전한 빈 리스트 반환 검증"""
+        self.assertEqual(transform_discovery_engine_response({}), {"snippets": []})
+        self.assertEqual(transform_discovery_engine_response({"results": []}), {"snippets": []})
+        self.assertEqual(transform_discovery_engine_response({"results": [{"document": {"id": "corrupt"}}]}), {"snippets": []})
+        self.assertEqual(transform_discovery_engine_response(None), {"snippets": []})
 
 
 class TestFlaskEndpoints(unittest.TestCase):
