@@ -34,15 +34,13 @@ LOCATION=${LOCATION:-global}
 COLLECTION_ID=${COLLECTION_ID:-default_collection}
 SERVING_CONFIG_ID=${SERVING_CONFIG_ID:-default_search}
 SERVICE_NAME=${SERVICE_NAME:-layout-parser-search-api}
-ENABLE_SIGNED_URL=${ENABLE_SIGNED_URL:-true}
-SIGNED_URL_EXPIRATION_MINUTES=${SIGNED_URL_EXPIRATION_MINUTES:-60}
-GCS_FALLBACK_URL_PREFIX=${GCS_FALLBACK_URL_PREFIX:-https://storage.cloud.google.com/}
+GCS_URL_PREFIX=${GCS_URL_PREFIX:-https://storage.cloud.google.com/}
 
 echo -e "📍 프로젝트 ID: ${GREEN}${PROJECT_ID}${NC}"
 echo -e "📍 리전: ${GREEN}${REGION}${NC}"
 echo -e "📍 서비스 이름: ${GREEN}${SERVICE_NAME}${NC}"
 echo -e "📍 데이터스토어 ID: ${GREEN}${DATASTORE_ID}${NC}"
-echo -e "📍 V4 Signed URL 발급: ${GREEN}${ENABLE_SIGNED_URL} (유효시간: ${SIGNED_URL_EXPIRATION_MINUTES}분)${NC}"
+echo -e "📍 이미지 URL 접두사: ${GREEN}${GCS_URL_PREFIX}${NC}"
 
 # 2. Cloud Run 배포
 echo -e "\n${BLUE}🔨 Cloud Run에 소스 배포 중... (잠시 시간이 소요될 수 있습니다)${NC}"
@@ -51,7 +49,7 @@ gcloud run deploy "${SERVICE_NAME}" \
     --region "${REGION}" \
     --project "${PROJECT_ID}" \
     --no-allow-unauthenticated \
-    --set-env-vars "PROJECT_ID=${PROJECT_ID},DATASTORE_ID=${DATASTORE_ID},LOCATION=${LOCATION},COLLECTION_ID=${COLLECTION_ID},SERVING_CONFIG_ID=${SERVING_CONFIG_ID},ENABLE_SIGNED_URL=${ENABLE_SIGNED_URL},SIGNED_URL_EXPIRATION_MINUTES=${SIGNED_URL_EXPIRATION_MINUTES},GCS_FALLBACK_URL_PREFIX=${GCS_FALLBACK_URL_PREFIX}" \
+    --set-env-vars "PROJECT_ID=${PROJECT_ID},DATASTORE_ID=${DATASTORE_ID},LOCATION=${LOCATION},COLLECTION_ID=${COLLECTION_ID},SERVING_CONFIG_ID=${SERVING_CONFIG_ID},GCS_URL_PREFIX=${GCS_URL_PREFIX}" \
     --quiet
 
 # 배포된 서비스 URL 확인
@@ -86,23 +84,8 @@ else
     IAM_FAILED=1
 fi
 
-# 3-2. Cloud Run SA에 V4 Signed URL 생성을 위한 TokenCreator 및 Storage Viewer 권한 부여
-echo -e "  👉 2) Cloud Run SA(${COMPUTE_SA})에 V4 Signed URL 발급 권한(TokenCreator, StorageViewer) 부여..."
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/iam.serviceAccountTokenCreator" \
-    --condition=None \
-    --quiet 2>/dev/null || true
-
-gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
-    --member="serviceAccount:${COMPUTE_SA}" \
-    --role="roles/storage.objectViewer" \
-    --condition=None \
-    --quiet 2>/dev/null || true
-echo -e "     ${GREEN}✔ Signed URL 발급 권한 설정 완료${NC}"
-
-# 3-3. GECX Service Agent에 Cloud Run Invoker 권한 부여
-echo -e "  👉 3) GECX 서비스 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
+# 3-2. GECX Service Agent에 Cloud Run Invoker 권한 부여
+echo -e "  👉 2) GECX 서비스 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
 if gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
     --member="serviceAccount:${GECX_SA}" \
     --role="roles/run.invoker" \
@@ -114,13 +97,13 @@ else
     echo -e "     ${YELLOW}ℹ️  GECX 서비스 에이전트가 아직 프로젝트에 생성되지 않았습니다 (CXAS 앱 생성 시 자동 생성됨).${NC}"
 fi
 
-# 3-4. 현재 로그인 계정에도 run.invoker 권한 부여 (로컬 테스트용)
+# 3-3. 현재 로그인 계정에도 run.invoker 권한 부여 (로컬 테스트용)
 if [ -n "$CURRENT_USER" ]; then
     MEMBER_PREFIX="user:"
     if [[ "$CURRENT_USER" == *"gserviceaccount.com" ]]; then
         MEMBER_PREFIX="serviceAccount:"
     fi
-    echo -e "  👉 4) 현재 사용자(${MEMBER_PREFIX}${CURRENT_USER})에 테스트용 호출자(run.invoker) 권한 부여..."
+    echo -e "  👉 3) 현재 사용자(${MEMBER_PREFIX}${CURRENT_USER})에 테스트용 호출자(run.invoker) 권한 부여..."
     gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
         --member="${MEMBER_PREFIX}${CURRENT_USER}" \
         --role="roles/run.invoker" \
@@ -145,10 +128,6 @@ if [ "$IAM_FAILED" -eq 1 ]; then
     echo -e "gcloud projects add-iam-policy-binding ${PROJECT_ID} \\"
     echo -e "    --member=\"serviceAccount:${COMPUTE_SA}\" \\"
     echo -e "    --role=\"roles/discoveryengine.admin\""
-    echo -e ""
-    echo -e "gcloud projects add-iam-policy-binding ${PROJECT_ID} \\"
-    echo -e "    --member=\"serviceAccount:${COMPUTE_SA}\" \\"
-    echo -e "    --role=\"roles/iam.serviceAccountTokenCreator\""
     echo -e "${BLUE}---------------------------------------------------------------------------------${NC}"
 fi
 

@@ -125,11 +125,10 @@ cp .env.example .env
 | **`DATASTORE_ID`** | **필수** | - | **GCP 콘솔**: `Vertex AI Search` (또는 Agent Builder) ➔ 좌측 `Data Stores` 메뉴 ➔ 생성된 데이터스토어 클릭 ➔ 상단 `Data store ID` 복사<br>**gcloud CLI**: `curl -H "Authorization: Bearer $(gcloud auth print-access-token)" "https://discoveryengine.googleapis.com/v1beta/projects/[PROJECT_ID]/locations/global/collections/default_collection/dataStores"` |
 | **`REGION`** | 선택 | `us-central1` | Cloud Run 배포 리전 (예: `us-central1`, `asia-northeast3` 등) |
 | **`LOCATION`** | 선택 | `global` | Discovery Engine 데이터스토어 생성 위치 (`global`, `us`, `eu` 등) |
-| **`ENABLE_SIGNED_URL`**| 선택 | `true` | 비공개 GCS 버킷 이미지를 외부 사용자가 채팅창에서 볼 수 있도록 **V4 Signed URL(서명된 임시 링크)** 발급 여부 (`true` 권장) |
-| **`SIGNED_URL_EXPIRATION_MINUTES`** | 선택 | `60` | 서명된 이미지 URL의 유효 시간 (분 단위, 기본 60분) |
 | **`COLLECTION_ID`** | 선택 | `default_collection` | Discovery Engine 컬렉션 ID (기본값 유지) |
 | **`SERVING_CONFIG_ID`** | 선택 | `default_search` | 서빙 설정 ID (기본값 유지) |
 | **`SERVICE_NAME`** | 선택 | `layout-parser-search-api` | 배포할 Cloud Run 서비스 이름 |
+| **`GCS_URL_PREFIX`** | 선택 | `https://storage.cloud.google.com/` | `gs://` 경로를 HTTPS 이미지 링크로 변환할 때 사용할 도메인 접두사 |
 | **`GECX_SERVICE_ACCOUNT`** | 선택 | (자동 계산) | GECX 서비스 에이전트 계정 (`service-[프로젝트번호]@gcp-sa-ces.iam.gserviceaccount.com`). 비워두면 `deploy.sh`가 자동 조회하여 권한 부여 |
 
 #### 2) 환경 사전 검증 스크립트 실행
@@ -268,9 +267,57 @@ test_empty_and_corrupt_data_handling ... ok
 - Cloud Run 서비스 계정에 `roles/discoveryengine.admin` 또는 `roles/discoveryengine.viewer` 역할이 부여되어 있는지 확인하세요.
 - GECX 서비스 계정(`service-[PROJECT_NUMBER]@gcp-sa-ces.iam.gserviceaccount.com`)에 Cloud Run의 `roles/run.invoker` 권한이 부여되어 있는지 확인하세요 (`./scripts/deploy.sh` 재실행으로 해결 가능).
 
-### Q2. 검색 결과 `snippets`가 빈 배열(`[]`)로 반환됩니다.
-- Vertex AI Search 콘솔에서 데이터스토어의 문서 색인(Ingestion)이 완료 상태인지 확인하세요.
-- 검색어(query)가 문서 내 실제 존재하는 키워드인지 확인하고, `./scripts/test_search.sh "문서내단어"`로 직접 조회해 보세요.
+---
+
+## 📚 부록 (Appendix): 서로 다른 프로젝트 간(Cross-Project) 연동 참고자료
+
+GECX 앱과 데이터스토어가 있는 프로젝트(예: `gemeni-workshop`)와 Cloud Run 프록시 API가 배포된 프로젝트(예: `project-elevate-007`)가 **서로 다른 멀티 프로젝트 환경**에서 연동할 때의 IAM 설정 및 연동 레퍼런스입니다.
+
+### 1. 크로스 프로젝트 아키텍처
+```plaintext
+[프로젝트 A: gemeni-workshop]
+  - CXAS 앱 (GECX 서비스 에이전트: service-329992103474@gcp-sa-ces...)
+  - Layout Parser 데이터스토어 ('layout-parser_1781649684122')
+       │
+       ▼ (1. OpenAPI 도구 호출)
+[프로젝트 B: project-elevate-007]
+  - Cloud Run 프록시 API (Cloud Run SA: 603418108879-compute...)
+       │
+       ▼ (2. Discovery Engine Search API 조회)
+[프로젝트 A: gemeni-workshop] (검색 결과 반환)
+```
+
+### 2. 크로스 프로젝트 IAM 권한 설정
+
+#### 1) 프로젝트 B(Cloud Run SA)에게 프로젝트 A의 Discovery Engine 조회 권한 부여
+```bash
+# 프로젝트 A(데이터스토어 소유 프로젝트)에서 실행
+gcloud projects add-iam-policy-binding [프로젝트A_ID] \
+    --member="serviceAccount:[프로젝트B_번호]-compute@developer.gserviceaccount.com" \
+    --role="roles/discoveryengine.admin"
+
+gcloud projects add-iam-policy-binding [프로젝트A_ID] \
+    --member="serviceAccount:[프로젝트B_번호]-compute@developer.gserviceaccount.com" \
+    --role="roles/serviceusage.serviceUsageConsumer"
+```
+
+#### 2) 프로젝트 A의 GECX 서비스 에이전트에게 프로젝트 B의 Cloud Run 호출 권한 부여
+```bash
+# 프로젝트 B(Cloud Run 배포 프로젝트)에서 실행
+gcloud run services add-iam-policy-binding [서비스이름] \
+    --member="serviceAccount:service-[프로젝트A_번호]@gcp-sa-ces.iam.gserviceaccount.com" \
+    --role="roles/run.invoker" \
+    --region=[리전] \
+    --project=[프로젝트B_ID]
+```
+
+### 3. Cloud Run 환경변수 설정
+Cloud Run이 프로젝트 A의 데이터스토어를 조회할 수 있도록 `.env`의 `PROJECT_ID`를 **프로젝트 A ID**로 지정합니다:
+```env
+PROJECT_ID=gemeni-workshop
+DATASTORE_ID=layout-parser_1781649684122
+LOCATION=global
+```
 
 ---
 
