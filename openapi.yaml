@@ -4,7 +4,7 @@ info:
   description: CXAS/GECX 연동을 위한 Vertex AI Search Layout Parser 검색 중계 API
   version: 1.0.0
 servers:
-  - url: https://[YOUR_CLOUD_RUN_SERVICE_URL]
+  - url: https://layout-parser-search-api-2v27qnoy2q-uc.a.run.app
     description: Deployed Cloud Run Service URL
 paths:
   /search:

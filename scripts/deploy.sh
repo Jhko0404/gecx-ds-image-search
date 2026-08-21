@@ -68,21 +68,26 @@ GECX_SA="${GECX_SERVICE_ACCOUNT:-service-${PROJECT_NUMBER}@gcp-sa-ces.iam.gservi
 CURRENT_USER=$(gcloud auth list --filter=status:ACTIVE --format="value(account)" 2>/dev/null || true)
 
 # 3-2. Cloud Run SA에 Discovery Engine Admin 권한 부여
-echo -e "  👉 1) Cloud Run 서비스 계정(${COMPUTE_SA})에 Discovery Engine 조회/관리 권한 부여..."
+echo -e "  👉 1) Cloud Run 기본 서비스 계정(${COMPUTE_SA})에 Discovery Engine 관리자 권한 부여..."
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member="serviceAccount:${COMPUTE_SA}" \
     --role="roles/discoveryengine.admin" \
     --condition=None \
-    --quiet || true
+    --quiet 2>/dev/null || true
+echo -e "     ${GREEN}✔ Discovery Engine 권한 설정 완료${NC}"
 
 # 3-3. GECX Service Agent에 Cloud Run Invoker 권한 부여
-echo -e "  👉 2) GECX 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
-gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
+echo -e "  👉 2) GECX 서비스 에이전트(${GECX_SA})에 Cloud Run 호출자(run.invoker) 권한 부여..."
+if gcloud run services add-iam-policy-binding "${SERVICE_NAME}" \
     --member="serviceAccount:${GECX_SA}" \
     --role="roles/run.invoker" \
     --region="${REGION}" \
     --project="${PROJECT_ID}" \
-    --quiet || true
+    --quiet 2>/dev/null; then
+    echo -e "     ${GREEN}✔ GECX 서비스 에이전트 권한 설정 완료${NC}"
+else
+    echo -e "     ${YELLOW}ℹ️  GECX 서비스 에이전트가 아직 프로젝트에 생성되지 않았습니다 (CXAS 앱 생성 시 자동 생성됨).${NC}"
+fi
 
 # 3-4. 현재 로그인 계정에도 run.invoker 권한 부여 (로컬 테스트용)
 if [ -n "$CURRENT_USER" ]; then
@@ -96,7 +101,8 @@ if [ -n "$CURRENT_USER" ]; then
         --role="roles/run.invoker" \
         --region="${REGION}" \
         --project="${PROJECT_ID}" \
-        --quiet || true
+        --quiet 2>/dev/null || true
+    echo -e "     ${GREEN}✔ 테스트 사용자 권한 설정 완료${NC}"
 fi
 
 # 4. openapi.yaml 파일 자동 업데이트
