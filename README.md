@@ -12,10 +12,12 @@
    - [0단계: 개발 환경 및 GCP 콘솔 로그인](#0단계-개발-환경-및-gcp-콘솔-로그인)
    - [1단계: 환경 설정 및 사전 점검](#1단계-환경-설정-및-사전-점검)
    - [2단계: Cloud Run 배포 및 IAM 권한 자동 설정](#2단계-cloud-run-배포-및-iam-권한-자동-설정)
-   - [3단계: 배포된 API 엔드투엔드 테스트](#3단계-배포된-api-엔드투엔드-테스트)
+   - [3단계: 자체 단위 테스트 및 배포 후 라이브 검증](#3단계-자체-단위-테스트-및-배포-후-라이브-검증)
    - [4단계: CXAS OpenAPI 툴 등록](#4단계-cxas-openapi-툴-등록)
    - [5단계: CXAS 에이전트 인스트럭션 수정](#5단계-cxas-에이전트-인스트럭션-수정)
-5. [❓ 문제 해결 (Troubleshooting)](#5--문제-해결-troubleshooting)
+5. [🧹 배포 리소스 현황 점검 및 정리/삭제](#6--배포-리소스-현황-점검-및-정리삭제-management--cleanup)
+6. [❓ 문제 해결 (Troubleshooting)](#7--문제-해결-troubleshooting)
+7. [📚 부록: 크로스 프로젝트 연동 참고자료](#-부록-appendix-서로-다른-프로젝트-간cross-project-연동-참고자료)
 
 ---
 
@@ -261,7 +263,25 @@ test_empty_and_corrupt_data_handling ... ok
 
 ---
 
-## 5. ❓ 문제 해결 (Troubleshooting)
+## 6. 🧹 배포 리소스 현황 점검 및 정리/삭제 (Management & Cleanup)
+
+배포된 GCP 리소스와 IAM 권한을 한눈에 조회하거나, 테스트 완료 후 자원을 안전하게 정리할 수 있는 유틸리티 스크립트를 제공합니다.
+
+### 1) 배포 리소스 종합 현황 조회 (대시보드)
+현재 프로젝트에 배포된 Cloud Run 서비스 상태, 최신 리비전, 트래픽 비율, 인그레스 정책, 부여된 IAM 권한 목록을 터미널에서 즉시 확인합니다.
+```bash
+./scripts/status_resources.sh
+```
+
+### 2) 테스트 리소스 안전 삭제 (Teardown)
+테스트 종료 후 불필요한 과금을 방지하기 위해 Cloud Run 서비스를 대화형 확인(y/N)을 거쳐 안전하게 삭제하고 `openapi.yaml`을 초기화합니다.
+```bash
+./scripts/cleanup.sh
+```
+
+---
+
+## 7. ❓ 문제 해결 (Troubleshooting)
 
 ### Q1. `403 Forbidden` 에러가 발생합니다.
 - Cloud Run 서비스 계정에 `roles/discoveryengine.admin` 또는 `roles/discoveryengine.viewer` 역할이 부여되어 있는지 확인하세요.

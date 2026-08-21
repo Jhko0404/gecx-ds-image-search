@@ -14,6 +14,8 @@
 - `scripts/check_env.sh`: GCP 로그인, 활성 프로젝트, 필수 API(`discoveryengine`, `run`, `cloudbuild` 등) 자동 활성화 및 환경변수 사전 검증.
 - `scripts/deploy.sh`: Cloud Run 자동 배포, IAM 권한 자동 설정, `openapi.yaml` URL 자동 갱신.
 - `scripts/verify_live.py` / `scripts/test_search.sh`: 단위 테스트 및 배포된 Cloud Run 엔드포인트 종합 검증 (체크리스트 리포트).
+- `scripts/status_resources.sh`: 배포된 Cloud Run 서비스 및 IAM 권한 종합 현황 대시보드 조회.
+- `scripts/cleanup.sh`: 테스트 종료 후 Cloud Run 서비스 대화형 안전 삭제 및 초기화.
 
 ---
 
@@ -87,3 +89,27 @@ Claude Code는 사용자가 환경 변수 확인을 어려워할 때 아래 기�
 
 - **403 Forbidden 에러 발생 시**: Cloud Run 기본 서비스 계정에 `roles/discoveryengine.admin`이 부여되었는지 확인하고, GECX 서비스 계정에 `roles/run.invoker`가 설정되었는지 점검합니다.
 - **404 DataStore Not Found 에러 시**: `.env`에 입력된 `DATASTORE_ID`와 `PROJECT_ID`, `LOCATION`이 Vertex AI Search 콘솔상의 값과 일치하는지 사용자에게 재확인을 요청합니다.
+
+---
+
+## ⚡ 빠른 명령어 요약
+
+```bash
+# 1. 환경 사전 점검
+./scripts/check_env.sh
+
+# 2. 오프라인 단위 테스트
+python3 -m unittest discover tests -v
+
+# 3. Cloud Run 배포 및 IAM 설정
+./scripts/deploy.sh
+
+# 4. 배포 후 E2E 검색 테스트
+./scripts/test_search.sh "필터"
+
+# 5. 배포 리소스 현황 대시보드 조회
+./scripts/status_resources.sh
+
+# 6. 리소스 안전 삭제 (Teardown)
+./scripts/cleanup.sh
+```
