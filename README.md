@@ -114,20 +114,21 @@ gcloud config set project [고객사-GCP-프로젝트-ID]
 ### 1단계: 환경 설정 및 사전 점검
 
 #### 1) `.env` 파일 설정
-`.env.example` 템플릿을 복사하여 `.env` 파일을 생성하고 필수 값을 기재합니다.
+`.env.example` 템플릿을 복사하여 `.env` 파일을 생성하고, 고객사 GCP 리소스에 맞는 정보를 기재합니다.
 ```bash
 cp .env.example .env
 ```
-`.env` 파일 내용:
-```env
-PROJECT_ID=고객사-GCP-프로젝트-ID
-REGION=us-central1
-DATASTORE_ID=고객사-Layout-Parser-데이터스토어-ID
-LOCATION=global
-COLLECTION_ID=default_collection
-SERVING_CONFIG_ID=default_search
-SERVICE_NAME=layout-parser-search-api
-```
+
+| 환경 변수 | 필수 여부 | 기본값 | 확인 방법 (GCP 콘솔 및 CLI) |
+| :--- | :---: | :--- | :--- |
+| **`PROJECT_ID`** | **필수** | - | **GCP 콘솔**: 상단 프로젝트 드롭다운 클릭 ➔ 'ID' 열의 값 복사<br>**gcloud CLI**: `gcloud config get-value project` |
+| **`DATASTORE_ID`** | **필수** | - | **GCP 콘솔**: `Vertex AI Search` (또는 Agent Builder) ➔ 좌측 `Data Stores` 메뉴 ➔ 생성된 데이터스토어 클릭 ➔ 상단 `Data store ID` 복사<br>**gcloud CLI**: `curl -H "Authorization: Bearer $(gcloud auth print-access-token)" "https://discoveryengine.googleapis.com/v1beta/projects/[PROJECT_ID]/locations/global/collections/default_collection/dataStores"` |
+| **`REGION`** | 선택 | `us-central1` | Cloud Run 배포 리전 (예: `us-central1`, `asia-northeast3` 등) |
+| **`LOCATION`** | 선택 | `global` | Discovery Engine 데이터스토어 생성 위치 (대부분 `global`) |
+| **`COLLECTION_ID`** | 선택 | `default_collection` | Discovery Engine 컬렉션 ID (기본값 유지) |
+| **`SERVING_CONFIG_ID`** | 선택 | `default_search` | 서빙 설정 ID (기본값 유지) |
+| **`SERVICE_NAME`** | 선택 | `layout-parser-search-api` | 배포할 Cloud Run 서비스 이름 |
+| **`GECX_SERVICE_ACCOUNT`** | 선택 | (자동 계산) | GECX 서비스 에이전트 계정 (`service-[프로젝트번호]@gcp-sa-ces.iam.gserviceaccount.com`). 비워두면 `deploy.sh`가 자동 조회하여 권한 부여 |
 
 #### 2) 환경 사전 검증 스크립트 실행
 GCP 로그인 상태, 프로젝트 설정, 필수 API 활성화 여부(`discoveryengine`, `run`, `cloudbuild` 등)를 한 번에 검증하고 누락된 API를 자동 활성화합니다.
